@@ -1,0 +1,11 @@
+{
+    "ApiHost": "api.trae.cn",
+    "CheckinTime": "00:05",
+    "WaitForNetworkMinutes": 30,
+    "RetryIntervalSeconds": 30,
+    "RequestTimeoutSeconds": 20,
+    "NotifyOnFailure": true,
+    "AuthToken": "",
+    "DeviceId": "",
+    "ReqSource": 1
+}
