@@ -1,4 +1,4 @@
-# Trae CN Auto Check-in (Windows & macOS)
+# Trae 自动签到（Windows & macOS）
 
 ### 不想输命令？把这段话复制给 AI
 
@@ -22,7 +22,11 @@
 
 ## 给技术用户的说明
 
-Trae CN（Trae 中国版）**每天一次的自动签到**工具：Windows 用 PowerShell + 计划任务，macOS 用 bash + launchd，到点自动点一次客户端里的「签到」领积分（check-in / sign-in / points）。零依赖、不打包 exe、不加壳、不混淆。
+Trae CN（Trae 中国版）的**每日签到**工具：Windows 用 PowerShell + 计划任务，macOS 用 bash + launchd，每天自动签到一次领积分（签到领积分 / Trae 积分）。零依赖、不打包 exe、不加壳、不混淆；支持开机自启和定时任务。
+
+### 这是什么（常见搜索说法）
+
+一句话：这是一个 **Trae 签到脚本**，帮你每天自动签到领积分。你用「Trae 自动签到」「每日签到工具」「Trae 签到脚本」「签到领积分」这类说法搜到的，都是同一类工具；本项目的区别是只服务单账号、每天只点一次、不刷量。
 
 **它不读你的凭据。** 不读取 Trae 客户端的 `storage.json`，不解密任何登录态文件，不回写客户端存储。你把自己的 `Cloud-IDE-JWT` 令牌粘贴到本工具自己的配置里，脚本只读这个文件；Windows 上可用 DPAPI 加密，macOS 上可放系统钥匙串。
 
@@ -324,7 +328,7 @@ Trae 官方文档确认有 macOS 客户端（macOS 12.0+，Apple Silicon 与 Int
 
 未覆盖：真实成功签到（需要有效令牌，未在测试中使用真实账号令牌）；通知弹窗失败路径（仅代码审查，用 `WARN` 日志兜底）。
 
-## 17. Related / Alternatives
+## 17. 同类项目 / 替代方案
 
 同类工具（与本项目无关联，仅便于对比；功能范围与合规性请自行核实）：
 
@@ -336,6 +340,6 @@ Trae 官方文档确认有 macOS 客户端（macOS 12.0+，Apple Silicon 与 Int
 
 本项目的定位差异：只做「每天一次的签到」，不读客户端凭据、不做多账号、不做代理池、不绕过限流；Windows 与 macOS 两套实现放在同一个仓库，配置项与退出码保持一致。
 
-## 18. License
+## 18. 许可证（MIT）
 
 [MIT](LICENSE)
