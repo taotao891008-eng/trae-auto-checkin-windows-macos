@@ -1,11 +1,13 @@
 {
     "ApiHost": "api.trae.cn",
+    "ProxyUrl": "",
     "CheckinTime": "00:05",
     "WaitForNetworkMinutes": 30,
     "RetryIntervalSeconds": 30,
     "RequestTimeoutSeconds": 20,
     "NotifyOnFailure": true,
     "AuthToken": "",
+    "AuthTokenProtected": "",
     "DeviceId": "",
     "ReqSource": 1
 }

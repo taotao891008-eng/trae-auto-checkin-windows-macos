@@ -1,11 +1,11 @@
 ﻿#Requires -Version 5.1
 <#
-  安装 Trae 每日签到：
+  安装 Trae 每日签到（Windows）：
     1. 复制脚本到 %LOCALAPPDATA%\TraeCheckin
     2. 注册计划任务 TraeCheckin：
        - 触发器 A：登录/开机后 1 分钟（并每 30 分钟重试 24 小时，用于断网补签）
        - 触发器 B：每天 00:05（并每小时重试 24 小时，用于跨 0 点自动再签一次）
-    3. 可选立即启动一次做验证
+    3. 可选立即跑一次「只查询」验证
 
   用法：
     powershell -ExecutionPolicy Bypass -File install.ps1
@@ -14,7 +14,7 @@
 
   说明：
     - 计划任务以当前用户身份运行，不需要管理员权限
-    - 不需要关闭杀毒软件；如被拦截，请参考 README 的加白名单流程
+    - macOS 请使用仓库里的 macos/install.sh（与 Windows 安装脚本互不通用）
 #>
 [CmdletBinding()]
 param(
@@ -32,6 +32,21 @@ if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA "TraeCheckin" 
 function Fail([string]$Message) {
     Write-Host "[失败] $Message" -ForegroundColor Red
     exit 1
+}
+
+function Set-PrivateFileAcl {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    try {
+        $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $acl = New-Object System.Security.AccessControl.FileSecurity
+        $acl.SetAccessRuleProtection($true, $false)
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($user, "FullControl", "Allow")
+        $acl.AddAccessRule($rule)
+        Set-Acl -LiteralPath $Path -AclObject $acl
+    } catch {
+        Write-Host "  提示：未能收紧配置文件权限（$($_.Exception.Message)），请确认该文件仅本人可读。" -ForegroundColor Yellow
+    }
 }
 
 Write-Host "安装目录：$InstallDir"
@@ -54,7 +69,32 @@ if (-not (Test-Path -LiteralPath $configFile)) {
     Copy-Item -LiteralPath $srcConfig -Destination $configFile -Force
 }
 
-$cfg = Get-Content -LiteralPath $configFile -Raw -Encoding UTF8 | ConvertFrom-Json
+try {
+    $cfg = Get-Content -LiteralPath $configFile -Raw -Encoding UTF8 | ConvertFrom-Json
+} catch {
+    Fail "配置文件解析失败：$($_.Exception.Message)"
+}
+
+# 补齐新增配置项，兼容旧版 config.json（保留用户已有值）
+$defaults = [ordered]@{
+    ApiHost               = "api.trae.cn"
+    ProxyUrl              = ""
+    CheckinTime           = "00:05"
+    WaitForNetworkMinutes = 30
+    RetryIntervalSeconds  = 30
+    RequestTimeoutSeconds = 20
+    NotifyOnFailure       = $true
+    AuthToken             = ""
+    AuthTokenProtected    = ""
+    DeviceId              = ""
+    ReqSource             = 1
+}
+foreach ($key in $defaults.Keys) {
+    if (-not ($cfg.PSObject.Properties.Name -contains $key)) {
+        $cfg | Add-Member -NotePropertyName $key -NotePropertyValue $defaults[$key]
+    }
+}
+
 if ($PSBoundParameters.ContainsKey("CheckinTime") -and $CheckinTime) {
     $cfg.CheckinTime = $CheckinTime
 }
@@ -62,7 +102,8 @@ if (-not $cfg.CheckinTime) { $cfg.CheckinTime = "00:05" }
 if ($cfg.CheckinTime -notmatch '^([01]\d|2[0-3]):[0-5]\d$') {
     Fail "签到时间格式不正确：$($cfg.CheckinTime)（应为 HH:mm，例如 00:05）"
 }
-$cfg | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configFile -Encoding UTF8
+$cfg | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $configFile -Encoding UTF8
+Set-PrivateFileAcl -Path $configFile
 
 $checkinPath = Join-Path $InstallDir "checkin.ps1"
 $userName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -146,21 +187,31 @@ Set-Content -LiteralPath (Join-Path $InstallDir "taskname.txt") -Value $TaskName
 Write-Host "计划任务已注册：$TaskName" -ForegroundColor Green
 Write-Host "  触发器 1：登录/开机后 1 分钟，之后每 30 分钟重试一次（持续 24 小时）"
 Write-Host "  触发器 2：每天 $($cfg.CheckinTime)，之后每小时重试一次（持续 24 小时）"
-Write-Host "  已启用 StartWhenAvailable：台式机休眠/关机错过了 00:05，唤醒或开机后会补跑"
+Write-Host "  已启用 StartWhenAvailable：睡眠/关机错过了 00:05，唤醒或开机后会补跑"
 
+$hasToken = [bool]($cfg.AuthTokenProtected -or $cfg.AuthToken -or $env:TRAE_CHECKIN_TOKEN)
 if (-not $NoStart) {
-    if (-not $cfg.AuthToken -and -not $env:TRAE_CHECKIN_TOKEN) {
-        Write-Host "已跳过立即验证：尚未配置 AuthToken。" -ForegroundColor Yellow
-        Write-Host "请编辑 $configFile，把令牌填入 AuthToken，然后重新运行 install.ps1 或直接运行 -Mode Status 验证。"
+    if (-not $hasToken) {
+        Write-Host "已跳过立即验证：尚未配置令牌。" -ForegroundColor Yellow
+        Write-Host "下一步（令牌不会回显、不会进日志、不会进对话）："
+        Write-Host "  powershell -ExecutionPolicy Bypass -File `"$checkinPath`" -SetToken"
     } else {
-        Write-Host "立即启动一次做验证（只查询，不会重复领积分）..."
-        try {
-            Start-ScheduledTask -TaskName $TaskName
-            Start-Sleep -Seconds 12
-            $info = Get-ScheduledTaskInfo -TaskName $TaskName
-            Write-Host ("  上次运行结果：" + $info.LastTaskResult)
-        } catch {
-            Write-Host "  启动验证失败：$($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "立即启动一次「只查询」验证（不会重复领积分）..."
+        $p = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", $checkinPath, "-Mode", "Status") `
+            -Wait -PassThru -WindowStyle Hidden
+        $code = $p.ExitCode
+        $meaning = switch ($code) {
+            0 { "成功（令牌有效）" }
+            1 { "请求失败，看日志" }
+            2 { "等待网络超时，看日志/代理设置" }
+            3 { "未配置令牌或令牌失效" }
+            4 { "配置或本地环境错误" }
+            default { "未知" }
+        }
+        Write-Host "  退出码：$code（$meaning）"
+        if ($code -ne 0) {
+            Write-Host "  日志：$InstallDir\logs\checkin.log" -ForegroundColor Yellow
         }
     }
 }
@@ -169,3 +220,5 @@ Write-Host ""
 Write-Host "日志：$InstallDir\logs\checkin.log"
 Write-Host "当天完成标记：$InstallDir\state.json"
 Write-Host "查看状态：powershell -ExecutionPolicy Bypass -File `"$checkinPath`" -Mode Status"
+Write-Host "加密保存令牌：powershell -ExecutionPolicy Bypass -File `"$checkinPath`" -SetToken"
+Write-Host "卸载：powershell -ExecutionPolicy Bypass -File `"$InstallDir\uninstall.ps1`""

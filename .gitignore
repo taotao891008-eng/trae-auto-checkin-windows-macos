@@ -1,9 +1,15 @@
 # 本地运行时数据（绝不提交）
 config.json
 state.json
+checkin.lock
+state.lock
 logs/
 *.log
 notify/
+
+# macOS 本地运行时配置（只提交模板）
+*.env
+!macos/config.example.env
 
 # 凭据/令牌/浏览器数据
 *.token

@@ -6,6 +6,13 @@
 
 **它不读你的凭据。** 不读取 Trae 客户端的 `storage.json`，不解密任何登录态文件，不回写客户端存储。你把自己的令牌粘贴到本工具自己的 `config.json`，脚本只读这个文件。
 
+## 0. 不想敲命令？把安装指令直接发给 TRAE
+
+复制 [INSTALL-WITH-TRAE.md](INSTALL-WITH-TRAE.md) 里的整段文字，发给你的 TRAE（或任何能执行命令的 AI 助手），它会自己完成下载、安装、注册开机与 00:05 触发、自检，并把结果回报给你。整段文本不包含任何真实令牌，只要求你在本机终端里自己粘贴一次。
+
+- Windows：用 `install.ps1`（已实测）
+- macOS：用 `macos/install.sh`（**未实测**，见 [macos/README.md](macos/README.md)）
+
 ## 1. 设计取舍：为什么选「手工粘贴令牌」
 
 需求里给了两个方案，这里说明为什么落地 A、以及为什么不是「粘贴 Cookie」：
@@ -22,10 +29,13 @@
 
 - 开机/登录后自动签到，每天只成功签到一次
 - 每天 00:05 自动再签一次（跨 0 点不依赖下一次开机）
-- 没网时持续等待，网络恢复后当天补签，而不是重试几次就放弃
+- 没网时持续等待（睡眠轮询，不烧 CPU），网络恢复后当天补签
 - 当天已成功签到后，后续触发直接跳过，不再请求接口
-- 本地日志记录时间、结果和失败原因；失败或令牌过期时本地弹窗/Toast，不静默失败
-- 日志与通知里对令牌自动打码
+- 互斥量 + 文件锁双重保护：两个触发同时命中时，只有一个实例会调用接口
+- 状态原子写入；本机日期异常时用接口响应头 `Date` 判断跨天
+- 本地日志记录时间、结果和失败原因，超过 2MB 自动轮转为 `.1`；失败或令牌过期时本地弹窗/Toast，不静默失败
+- 日志与通知里对令牌自动打码；令牌可用 Windows DPAPI 加密保存
+- 网络失败会给出可操作提示（是否该配代理），请求超时与重试都有上限
 
 ## 3. 签到入口与接口（已核实）
 
@@ -111,24 +121,31 @@ Get-Content "$env:LOCALAPPDATA\TraeCheckin\logs\checkin.log" -Tail 20
 
 脚本内去重：
 
-- 成功签到后写 `state.json` 的 `lastSuccessDay`，按**北京时间自然日**计算
+- 成功签到后写 `state.json` 的 `lastSuccessDay`，按**北京时间（UTC+8）自然日**计算，与系统本地时区无关
 - 后续任何触发发现「当天已完成」就直接退出，**不再调用接口**
+- 跨天判断优先用接口响应头里的服务器 `Date`；若本机时间与本机时区被改，以服务器日期为准并在日志中告警
 - 日期跨过 0 点后，00:05 的触发会正常再签一次
-- 互斥量防止两个触发同时运行
+- 本地记录的上次成功日期晚于今天（系统时间被回拨）时不会误跳过，仍按接口实际状态处理
+- 互斥量（同会话）+ `checkin.lock` 文件锁（跨进程/跨会话）双重保护，第二个实例直接退出
+- `state.json` 通过临时文件 + 原子替换写入，避免写一半损坏
 
-断网处理：单次触发内按 `RetryIntervalSeconds` 反复检测 `api.trae.cn:443`，直到 `WaitForNetworkMinutes` 用完；仍未恢复则退出码 2 并弹窗一次，后续计划任务触发继续补签。
+断网处理：单次触发内按 `RetryIntervalSeconds` 用 `Start-Sleep` 睡眠轮询（不空转 CPU），直到 `WaitForNetworkMinutes` 用完；仍未恢复则退出码 2 并弹窗一次，后续计划任务触发继续补签。单次请求另有超时和最多 2 次尝试（仅对超时/5xx 重试）。
+
+代理：默认直连；若系统需要代理，在 `config.json` 填 `ProxyUrl`（如 `http://127.0.0.1:10808`），或设置 `HTTPS_PROXY` 环境变量。脚本会检测代理端口连通性；PowerShell 5.1 不支持 SOCKS，请使用代理软件的 HTTP 混合端口。
 
 ## 9. 配置项
 
 | 配置项 | 默认 | 说明 |
 | --- | --- | --- |
-| `AuthToken` | 空 | **必填**。手工粘贴的 `Cloud-IDE-JWT` 令牌 |
+| `AuthToken` | 空 | 手工粘贴的 `Cloud-IDE-JWT` 令牌（明文；推荐改用 `AuthTokenProtected`） |
+| `AuthTokenProtected` | 空 | 用 `-SetToken` / `-ProtectToken` 写入的 DPAPI 密文；与 `AuthToken` 二选一 |
 | `DeviceId` | 空 | 留空即可，脚本会在 `state.json` 生成一个随机 UUID 并复用 |
 | `ApiHost` | `api.trae.cn` | 接口域名，一般不用改 |
+| `ProxyUrl` | 空 | HTTP 代理地址；留空时读取 `HTTPS_PROXY` / `HTTP_PROXY` |
 | `CheckinTime` | `00:05` | 每日触发时间（重新运行 `install.ps1` 生效） |
-| `WaitForNetworkMinutes` | 30 | 单次触发等待网络的最长分钟数 |
-| `RetryIntervalSeconds` | 30 | 等待网络时的重试间隔（最小 5） |
-| `RequestTimeoutSeconds` | 20 | 单次接口超时 |
+| `WaitForNetworkMinutes` | 30 | 单次触发等待网络的最长分钟数（0..1440） |
+| `RetryIntervalSeconds` | 30 | 等待网络时的重试间隔（5..600） |
+| `RequestTimeoutSeconds` | 20 | 单次接口超时（5..120） |
 | `NotifyOnFailure` | true | 失败/令牌过期是否本地弹窗 |
 | `ReqSource` | 1 | 请求体里的 `req_source`，一般不用改 |
 
@@ -138,7 +155,21 @@ Get-Content "$env:LOCALAPPDATA\TraeCheckin\logs\checkin.log" -Tail 20
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -CheckinTime "00:30"
 ```
 
-环境变量 `TRAE_CHECKIN_TOKEN` 优先级高于 `config.json`，适合不想把令牌写盘的人（但计划任务以登录用户身份运行，需为该用户设置环境变量）。
+### 令牌怎么存更安全
+
+推荐用 DPAPI（Windows 数据保护接口，当前用户范围）加密，而不是明文：
+
+```powershell
+# 交互式粘贴令牌（不回显），加密后写入 config.json，明文 AuthToken 会被清空
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\TraeCheckin\checkin.ps1" -SetToken
+
+# 如果之前已经手工把明文写进了 AuthToken，可原地加密
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\TraeCheckin\checkin.ps1" -ProtectToken
+```
+
+DPAPI 密文只能被保存它的同一个 Windows 用户解密；换用户或换机器会解不开（脚本会报退出码 4 并提示重新保存）。卸载时密文随 `config.json` 一起删除。
+
+环境变量 `TRAE_CHECKIN_TOKEN` 优先级最高，适合不想把令牌写盘的人（但计划任务以登录用户身份运行，需为该用户设置环境变量）。
 
 > 关于 `DeviceId`：本工具不读客户端设备 ID，只在本机生成随机 UUID。若某些账号被平台绑定设备，签到可能失败，日志会给出具体 HTTP/code，便于判断。
 
@@ -163,11 +194,19 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\TraeCheckin\checkin.
 powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\TraeCheckin\uninstall.ps1"
 ```
 
-默认删除计划任务和安装目录（含日志、`state.json`、`config.json`，即令牌一并删除）。
+默认删除计划任务和安装目录（含日志、`state.json`、`config.json`，即令牌与 DPAPI 密文一并删除）。
 
 - 只删任务、保留文件排查：`-KeepFiles`
 - 目录含 `.git`（源码仓库）时会拒绝删除，避免误删源码
 - 也可指定目录：`-InstallDir "D:\Tools\TraeCheckin"`
+
+说明：DPAPI 密文存在 `config.json` 里，删掉该文件后密文即失效。DPAPI 的“用户级主密钥”由 Windows 为用户统一管理（`%APPDATA%\Microsoft\Protect`），无法只删本工具那一条，也不建议删除（会影响其他程序）。如果曾把 `TRAE_CHECKIN_TOKEN` 永久写进用户环境变量，卸载脚本会提示你删除的那一行命令。
+
+一条命令退出：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\TraeCheckin\uninstall.ps1"
+```
 
 ## 12. 被杀软拦截怎么办
 
@@ -181,23 +220,93 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\TraeCheckin\uninstal
 
 ## 13. 风险与合规
 
-- 这是对平台活动的**自动化**操作。平台用户协议可能不鼓励或禁止自动化领取奖励，账号被风控、积分被回收等后果由使用者自行承担。
-- 本项目只做「查询状态 + 领取签到」，不绕过验证码、不伪造设备、不多账号刷取、不修改客户端。
-- 接口可能随客户端升级变化；工具会明确报错，不会静默失败。
-- 令牌明文保存在本机 `config.json`。请确认该文件权限仅限本人，不要把令牌提交进任何仓库（本仓库 `.gitignore` 已排除 `config.json`）。
-- 请保持克制：成功当天即停止请求接口，不要改成高频轮询。
+**一句话**：这只是把你每天手动点一次的「签到」按钮改成自动点一次，与人工操作等价；它不会给你带来超出人工点击的收益，也不做任何规避检测的处理。
+
+**它是什么**
+
+- **每天一次的自动点击**：同一北京自然日只成功调用一次领取接口，成功后当天不再发请求
+- **等价于人工操作**：走的是客户端头像菜单里「签到」同一个接口，请求头/请求体与人工点击一致，不额外伪造字段
+- **单账号自用**：只服务你本人一个账号
+
+**它明确不做什么（也请不要改成那样）**
+
+| 禁止行为 | 本工具的约束 |
+| --- | --- |
+| 多账号批量刷取 | 不提供账号池、不做账号轮换、配置只支持一个 `AuthToken` |
+| 绕过限流 | 不并发轰炸、不缩短频率；失败按 `RetryIntervalSeconds` 睡眠重试，单次触发最多 2 次尝试，成功后当天停止 |
+| 修改设备指纹 | 不伪造 `x-device-id`、不改 UA；`DeviceId` 只是本机随机 UUID |
+| 规避检测 | 不搞代理池轮换、不模拟点击轨迹、不绕验证码；不读取/解密客户端登录态 |
+
+**凭据只留在本机**
+
+- 令牌写在 `config.json`（推荐用 `-SetToken` 存成 DPAPI 密文 `AuthTokenProtected`），不上传、不发任何第三方
+- 日志与弹窗对令牌自动打码，绝不写入日志文件
+- `config.json` 安装时自动收紧为「仅当前用户」权限；`.gitignore` 已排除它
+- 不要把令牌贴到聊天、issue、截图或任何仓库
+
+**风险提示**
+
+> 自动签到**可能违反平台活动规则**，账号被风控、积分被回收、活动资格取消等后果由**使用者自行承担**。接口可能随客户端升级变化，本工具不做对抗性适配，只会明确报错，不会静默失败。
+> 如果你的账号或所在地区的规则不允许自动化，请不要使用。
+
+**随时退出（一条命令）**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\TraeCheckin\uninstall.ps1"
+```
+
+会删除计划任务、安装目录、配置（含令牌与 DPAPI 密文）、状态与日志。
 
 ## 14. 常见问题
 
 | 现象 | 原因与处理 |
 | --- | --- |
-| 日志/弹窗提示「尚未配置令牌」 | 编辑 `config.json` 的 `AuthToken` |
-| 提示「令牌失效」（HTTP 401/403 或 `code=1001`） | 按第 6 节重新抄一次令牌 |
-| HTTP 403 | 令牌无权限或账号状态异常，重新登录客户端后再取令牌 |
-| 一直提示没有网络 | 只测试 `api.trae.cn:443`；公司代理/防火墙需放行 |
-| 计划任务没跑 | 任务计划程序查看 `TraeCheckin` 的「上次运行结果」，确认用户已登录 |
+| 提示「尚未配置令牌」 | 运行 `checkin.ps1 -SetToken` 加密写入，或编辑 `config.json` 的 `AuthToken` |
+| 提示「令牌失效」（HTTP 401/403 或 `code=1001`） | 按第 6 节重新抄一次令牌，再用 `-SetToken` 保存 |
+| 退出码 4，提示 DPAPI 解密失败 | 密文是别的用户/别的机器生成的，重新 `-SetToken` 保存一次 |
+| 一直提示没有网络 | 只测试 `ApiHost:443`；公司代理/防火墙需放行，或填 `ProxyUrl` |
+| 提示「疑似代理未配置」 | 系统里设了代理但脚本没拿到，填 `config.json` 的 `ProxyUrl`（HTTP 端口，PS 5.1 不支持 SOCKS） |
+| 计划任务没跑 | 任务计划程序查看 `TraeCheckin` 的「上次运行结果」，确认用户已登录、未禁用 |
+| 提示「本机时间早于上次签到日期」 | 系统时间被回拨，脚本不会误跳过，按服务器日期重新判断，日志里有告警 |
 | 签到失败但状态查询正常 | 看日志里的 HTTP 状态与 `code`；可能账号被风控或活动未开放 |
+| 弹窗没出来 | 日志里会有 `WARN ... 通知失败`，不影响签到结果；可改用 `-NoNotify` 静默 |
 
-## 15. License
+## 15. macOS（未实测）
+
+Trae 官方文档确认有 macOS 客户端（macOS 12.0+，Apple Silicon 与 Intel 均支持）：
+
+- 入门与系统要求：<https://docs.trae.cn/ide_get-started-with-trae>
+- 套餐/积分与「签到」入口：<https://docs.trae.cn/ide_plans-and-billing>
+
+官方文档没有区分 Windows 与 macOS 的签到入口和鉴权方式，签到同样在客户端头像菜单里，接口鉴权也是 `Authorization: Cloud-IDE-JWT <token>`。**但本机只有 Windows，macOS 那套脚本完全没有实测**，请按 [macos/README.md](macos/README.md) 里的「Mac 上待验证」清单自行验证。
+
+- 调度：launchd LaunchAgent（登录时 + 每天 00:05）
+- 实现：`macos/checkin.sh`（bash + curl），配置放 `~/.config/trae-checkin/config.env`，权限 `600`
+- 安装：`bash macos/install.sh`；卸载：`bash macos/uninstall.sh`
+
+## 16. 已验证内容（Windows）
+
+自测环境：Windows + PowerShell 5.1，接口用本机 HTTPS mock（自签名证书，仅测试进程内跳过校验），真实接口仅用于错误令牌用例。14/14 通过：
+
+| 编号 | 场景 | 结果 |
+| --- | --- | --- |
+| T1 | 正常签到（status→claim） | 退出码 0，`state.json` 写入当天日期与积分 |
+| T2 | 当天重复触发 | 退出码 0，接口新增请求数 0 |
+| T3 | 两个实例并发（开机 + 零点同时命中） | 只有一个实例调用接口，接口总请求 3 次（status/claim/复查） |
+| T4 | 断网等待 | 退出码 2，等待 66s，进程 CPU 累计 0.73s（睡眠轮询不烧 CPU） |
+| T5 | 真实接口 + 错误令牌 | 退出码 3，日志无令牌泄漏 |
+| T6a | 系统时间回拨 | 不误跳过，日志告警后正常 claim |
+| T6b | 服务器日期比本机快 1 天 | 按服务器日期落状态并告警 |
+| T7a | `-SetToken`（DPAPI） | 密文 372 字符写入，明文 `AuthToken` 清空 |
+| T7b | 用密文正常签到 | 退出码 0 |
+| T7c | 密文被篡改 | 退出码 4，提示重新保存 |
+| T8 | 日志超过 2MB | 轮转为 `checkin.log.1`，新日志重建 |
+| T9a | `install.ps1` 安装 | 计划任务注册成功，配置初始化成功 |
+| T9b | 未配置令牌运行 | 退出码 3，不发无效请求 |
+| T9c | `uninstall.ps1` 卸载 | 任务、目录、锁文件、状态全部清除 |
+
+未覆盖：真实成功签到（需要有效令牌，未在测试中使用真实账号令牌）；通知弹窗失败路径（仅代码审查，用 `WARN` 日志兜底）。
+
+## 17. License
 
 [MIT](LICENSE)
