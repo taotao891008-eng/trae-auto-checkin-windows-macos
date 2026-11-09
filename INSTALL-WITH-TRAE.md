@@ -1,9 +1,18 @@
 # 把安装直接交给你的 TRAE
 
-不想自己敲命令？复制下面**整段文字**，发给你正在用的 TRAE（或任何能执行命令的 AI 助手）。它会自己下载、安装、注册开机与 00:05 触发、跑自检，最后把结果回报给你。
+### 不想输命令？把这段话复制给 AI
 
-- 你只需要做一件事：在**你自己的终端**里粘贴一次令牌。令牌**不要**发进对话。
-- 下面两段文本都**不含任何真实令牌**，只写了「Cloud-IDE-JWT」这个名称。
+> **复制本文件里的整段文字，发给你的 TRAE（或任何能执行命令的 AI 助手），它会自己完成下载、安装、注册开机与 00:05 触发、自检，并把结果回报给你。整段文本不包含任何真实令牌，只要求你在本机终端里自己粘贴一次。**
+
+三步搞定：
+
+1. 打开本文件（你已经在看了）
+2. 按你的系统（Windows / macOS）把对应那一段**整段复制**
+3. 直接粘给你的 AI 助手，剩下的交给它
+
+装完你会看到：计划任务 `TraeCheckin`（macOS 是 LaunchAgent `cn.trae.checkin`）、程序在 `%LOCALAPPDATA%\TraeCheckin`（macOS 在 `~/.local/share/trae-checkin`），AI 会跑一次状态自检，并把「装在哪、任务是否建成功、自检结果」报给你。
+
+> **你不需要会命令行，不需要装任何东西，也不用把令牌发给任何人或任何 AI。** 令牌只在最后一步由你自己在终端里粘贴一次，加密后只存在你的电脑上。
 
 ---
 
@@ -13,7 +22,7 @@
 你好，请帮我在 Windows 上安装并配置一个「Trae 每日签到」小工具。你负责执行命令和检查结果，我负责在本机自己粘贴令牌。
 
 背景（不用我再解释）：
-- 仓库地址：https://github.com/taotao891008-eng/trae-auto-checkin
+- 仓库地址：https://github.com/taotao891008-eng/trae-auto-checkin-windows-macos
 - 它是纯 PowerShell 的 Windows 工具，每天自动点一次 Trae 桌面客户端里的「签到」，和人工点一次等价。
 - 安全边界：它不读取 Trae 客户端的任何文件（不碰 storage.json、不解密登录态），只读自己安装目录下的 config.json；令牌只留在本机，日志自动打码，不上传任何数据。
 
@@ -21,7 +30,7 @@
 
 1) 下载
    把仓库克隆到临时目录，例如：
-   git clone https://github.com/taotao891008-eng/trae-auto-checkin.git "%TEMP%\trae-auto-checkin"
+   git clone https://github.com/taotao891008-eng/trae-auto-checkin-windows-macos.git "%TEMP%\trae-auto-checkin"
    如果本机没有 git，就用浏览器下载 ZIP 解压到同一位置。
 
 2) 安装
@@ -80,14 +89,14 @@
 你好，请帮我在 macOS 上安装并配置「Trae 每日签到」小工具。重要前提：这套 macOS 脚本作者没有在真机上实测过，所以请你边做边核对，遇到问题如实告诉我，不要假装成功。
 
 背景：
-- 仓库地址：https://github.com/taotao891008-eng/trae-auto-checkin
+- 仓库地址：https://github.com/taotao891008-eng/trae-auto-checkin-windows-macos
 - macOS 相关文件在仓库的 macos/ 目录，用 bash + curl 实现。
 - 安全边界：不读取 Trae 客户端任何文件，只读 ~/.config/trae-checkin/ 下的配置；令牌只留在本机（文件权限 600 或系统钥匙串），日志自动打码。
 
 请按顺序做：
 
 1) 下载
-   git clone https://github.com/taotao891008-eng/trae-auto-checkin.git ~/Downloads/trae-auto-checkin
+   git clone https://github.com/taotao891008-eng/trae-auto-checkin-windows-macos.git ~/Downloads/trae-auto-checkin
    没有 git 就用浏览器下载 ZIP，解压到同一位置。
 
 2) 安装

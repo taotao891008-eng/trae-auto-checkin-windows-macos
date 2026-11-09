@@ -36,7 +36,7 @@
 ## 3. 安装
 
 ```bash
-cd trae-auto-checkin
+cd trae-auto-checkin-windows-macos
 bash macos/install.sh                 # 只安装，稍后自己配令牌
 bash macos/install.sh --set-token     # 安装后交互式粘贴令牌（不回显）
 bash macos/install.sh --use-keychain  # 令牌存系统钥匙串，配置文件不落明文

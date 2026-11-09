@@ -1,17 +1,34 @@
-# trae-auto-checkin
+# Trae CN Auto Check-in (Windows & macOS)
 
-> **English**: A lightweight, zero-dependency PowerShell tool for Windows that performs the daily Trae CN check-in. **It never reads the Trae client's login state** — you paste your own token into a local config file, and the script only reads that file. It waits for the network to come back instead of giving up, runs once per Beijing calendar day, triggers at logon and 00:05, writes a local masked log, and shows a local notification when the token expires or a check-in fails. No EXE, no obfuscation, no third-party notification service, MIT licensed. Use only with your own single account; automating platform activities may violate the platform rules.
+### 不想输命令？把这段话复制给 AI
 
-一个面向 Windows 的 Trae CN 每日签到小工具。纯 PowerShell，不打包 exe、不加壳、不混淆、无第三方运行时依赖。
+> **复制 [INSTALL-WITH-TRAE.md](INSTALL-WITH-TRAE.md) 里的整段文字，发给你的 TRAE（或任何能执行命令的 AI 助手），它会自己完成下载、安装、注册开机与 00:05 触发、自检，并把结果回报给你。整段文本不包含任何真实令牌，只要求你在本机终端里自己粘贴一次。**
 
-**它不读你的凭据。** 不读取 Trae 客户端的 `storage.json`，不解密任何登录态文件，不回写客户端存储。你把自己的令牌粘贴到本工具自己的 `config.json`，脚本只读这个文件。
+三步搞定：
 
-## 0. 不想敲命令？把安装指令直接发给 TRAE
+1. 打开 [INSTALL-WITH-TRAE.md](INSTALL-WITH-TRAE.md)
+2. 按你的系统（Windows / macOS）把对应那一段**整段复制**
+3. 直接粘给你的 AI 助手，剩下的交给它
 
-复制 [INSTALL-WITH-TRAE.md](INSTALL-WITH-TRAE.md) 里的整段文字，发给你的 TRAE（或任何能执行命令的 AI 助手），它会自己完成下载、安装、注册开机与 00:05 触发、自检，并把结果回报给你。整段文本不包含任何真实令牌，只要求你在本机终端里自己粘贴一次。
+装完你会看到：计划任务 `TraeCheckin`（macOS 是 LaunchAgent `cn.trae.checkin`）、程序在 `%LOCALAPPDATA%\TraeCheckin`（macOS 在 `~/.local/share/trae-checkin`），AI 会跑一次状态自检，并把「装在哪、任务是否建成功、自检结果」报给你。
 
-- Windows：用 `install.ps1`（已实测）
-- macOS：用 `macos/install.sh`（**未实测**，见 [macos/README.md](macos/README.md)）
+> **你不需要会命令行，不需要装任何东西，也不用把令牌发给任何人或任何 AI。** 令牌只在最后一步由你自己在终端里粘贴一次，加密后只存在你的电脑上。
+
+---
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform: Windows | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
+![Language: PowerShell](https://img.shields.io/badge/language-PowerShell-5391FE)
+
+## 给技术用户的说明
+
+Trae CN（Trae 中国版）**每天一次的自动签到**工具：Windows 用 PowerShell + 计划任务，macOS 用 bash + launchd，到点自动点一次客户端里的「签到」领积分（check-in / sign-in / points）。零依赖、不打包 exe、不加壳、不混淆。
+
+**它不读你的凭据。** 不读取 Trae 客户端的 `storage.json`，不解密任何登录态文件，不回写客户端存储。你把自己的 `Cloud-IDE-JWT` 令牌粘贴到本工具自己的配置里，脚本只读这个文件；Windows 上可用 DPAPI 加密，macOS 上可放系统钥匙串。
+
+Windows 版已实测（14 项自检），macOS 版代码已提供但**未在 Mac 真机实测**，见 [macos/README.md](macos/README.md)。
+
+> **English**: A zero-dependency Trae CN daily check-in (sign-in / points) tool for Windows and macOS. On Windows it runs as a PowerShell scheduled task; on macOS as a bash + launchd LaunchAgent. It never reads the Trae client's login state — you paste your own token once, and it stays on your machine (Windows DPAPI or macOS Keychain). No EXE, no obfuscation, no third-party notification service, MIT licensed. Use only with your own single account; automating platform activities may violate the platform rules.
 
 ## 1. 设计取舍：为什么选「手工粘贴令牌」
 
@@ -87,7 +104,7 @@
 
 ```powershell
 # 下载或克隆本仓库后，进入仓库目录
-cd trae-auto-checkin
+cd trae-auto-checkin-windows-macos
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
@@ -307,6 +324,18 @@ Trae 官方文档确认有 macOS 客户端（macOS 12.0+，Apple Silicon 与 Int
 
 未覆盖：真实成功签到（需要有效令牌，未在测试中使用真实账号令牌）；通知弹窗失败路径（仅代码审查，用 `WARN` 日志兜底）。
 
-## 17. License
+## 17. Related / Alternatives
+
+同类工具（与本项目无关联，仅便于对比；功能范围与合规性请自行核实）：
+
+| 项目 / 关键词 | 说明 |
+| --- | --- |
+| **TraeWorkAssistant** | 社区里功能更全的 Trae 辅助工具（含签到相关能力），在 GitHub 搜索 `TraeWorkAssistant` |
+| GitHub 搜索 `trae checkin` | 可见若干 PowerShell / Python 实现，多数只覆盖 Windows |
+| 通用做法 | Windows「计划任务 + PowerShell」、macOS「launchd + curl」；本项目就是这套组合的完整实现 |
+
+本项目的定位差异：只做「每天一次的签到」，不读客户端凭据、不做多账号、不做代理池、不绕过限流；Windows 与 macOS 两套实现放在同一个仓库，配置项与退出码保持一致。
+
+## 18. License
 
 [MIT](LICENSE)
